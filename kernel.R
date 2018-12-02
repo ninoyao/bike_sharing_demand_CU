@@ -1,11 +1,3 @@
-# This script creates a sample submission using Random Forests
-# and also plots the feature importance from the trained model.
-#
-# To submit the sample, download 1_random_forest_submission.csv
-# from the Output tab and submit it as normal to the competition
-# (through https://www.kaggle.com/c/bike-sharing-demand/submissions/attach)
-#
-# Click "fork" to run this script yourself and make tweaks
 
 library(ggplot2)
 library(lubridate)
@@ -13,8 +5,8 @@ library(randomForest)
 
 set.seed(1)
 
-train <- read.csv("../input/train.csv")
-test <- read.csv("../input/test.csv")
+train <- read.csv("all/train.csv")
+test <- read.csv("all/test.csv")
 
 library(randomForest)
 
