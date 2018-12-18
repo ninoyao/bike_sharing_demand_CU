@@ -1,0 +1,90 @@
+---
+title: "Untitled"
+author: "Yuzhi Yao/yy2933 Sile Yang/sy2738"
+date: "2018/12/18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Packages
+```{r}
+library(mlr) 
+#Machine Learning in R, NOT Multiple linear regression
+library(xgboost)
+library(data.table)
+library(parallelMap)
+library(ggplot2)
+library(lubridate)
+library(randomForest)
+set.seed(1)
+```
+
+#Read data
+```{r}
+train <- read.csv("/Users/nino/Documents/GitHub/bike_sharing_demand_CU/doc/train.csv")
+test <- read.csv("/Users/nino/Documents/GitHub/bike_sharing_demand_CU/doc/test.csv")
+```
+
+
+#Feature engineering
+
+There are many features we need to transfer the class in R so that we can use MLR model correctly.
+For example, we need to transfer our "hour" variable from numberic to factor variables. As 23:00 is closer to 00:00 than 18:00, if we keep use numberic format we will not capture the relationship correctly.
+
+```{r}
+featureEngineer = function(df) {
+  names = c("season", "holiday", "workingday", "weather")
+  df[,names] = lapply(df[,names], factor)
+  df$datetime = strptime(as.character(df$datetime), format = "%Y-%m-%d %T", tz = "EST")
+  df$hour = as.factor(format(df$datetime, format = "%H"))
+  df$weekday = as.factor(format(df$datetime, format = "%u"))
+  df$year = as.factor(format(df$datetime, format = "%Y"))
+  df$datetime = df$casual = df$registered = NULL
+  return(df)
+}
+train_eng = featureEngineer(train)
+test_eng = featureEngineer(test)
+train_eng$count = log1p(train$count)
+
+#extractfeatures
+extractFeatures <- function(df) {
+  features <- c("season",
+                "holiday",
+                "workingday",
+                "weather",
+                "temp",
+                "atemp",
+                "humidity",
+                "windspeed",
+                "hour")
+  df$hour <- hour(ymd_hms(df$datetime))
+  return(df[, features])
+}
+trainFea <- extractFeatures(train)
+testFea  <- extractFeatures(test)
+```
+
+#random forest
+
+```{r}
+#train our model
+rf <- randomForest(extractFeatures(train), train$count, ntree=100, importance=TRUE)
+#variable importance
+imp <- importance(rf, type=1)
+#plot variable importance
+featureImportance <- data.frame(Feature=row.names(imp), Importance=imp[,1])
+p <- ggplot(featureImportance, aes(x=reorder(Feature, Importance), y=Importance)) +
+     geom_bar(stat="identity", fill="#53cfff") +
+     coord_flip() + 
+     theme_light(base_size=20) +
+     xlab("Importance") +
+     ylab("") + 
+     ggtitle("Random Forest Feature Importance\n") +
+     theme(plot.title=element_text(size=18))
+p
+```
+
+#xgboost
