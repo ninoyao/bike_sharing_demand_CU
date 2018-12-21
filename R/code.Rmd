@@ -1,6 +1,6 @@
 ---
-title: "Untitled"
-author: "Yuzhi Yao/yy2933 Sile Yang/sy2738"
+title: "Final Prtoject"
+author: "Yuzhi Yao UNI:yy2933  Sile Yang UNI:sy2738"
 date: "2018/12/18"
 output: html_document
 ---
@@ -8,34 +8,88 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Analysis Of Bike Sharing Demand in Washington D.C.
 
-#Packages
-```{r}
-library(mlr) 
-#Machine Learning in R, NOT Multiple linear regression
-library(xgboost)
+## Introduction
+
+Bike sharing systems, public bicycle systems, or bike-share schemes, are a means of renting bicycles where the process of obtaining membership, rental, and bike return is automated via a network of kiosk locations throughout a city. Using these systems, people are able rent a bike from a one location and return it to a different place on an as-needed basis. People enters payment information and the system unlocks a bike. When returning, people place the bike in the kiosk, which locks it in place. Some bike sharing systems provide lockless services by using smartphone applications.  
+
+![](https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Melbourne_City_Bikes.JPG/1200px-Melbourne_City_Bikes.jpg)
+
+
+Because sharing bycicles costs less and provide an environment-friendly transportation alternative, they become popular among smart cities. Currently, there are over 500 bike-sharing programs around the world.  
+
+One problem that bike sharing systems currently have is how to satisfy bike demands in different locations. The demands are influenced by many factors and require a complex model to predict. In this project, we will predict bike rental demands in Washington, D.C. with a concentration on historical usage patterns and weather data.   
+
+## Data
+
+Our data is provided by the Capital Bikeshare program, who posted its data as a Kaggle Competition. The dataset contains hourly rental data spanning two years. There are 12 variables in the dataset. 
+
+**datetime** - This variable contains timestamp and hourly date  
+**season** -  This variable shows seasons: 1 = spring, 2 = summer, 3 = fall, 4 = winter   
+**holiday** - This variable is a binary variable: whether the day is considered a holiday  
+**workingday** - This variable is a binary variable: whether the day is neither a weekend nor holiday  
+**weather** - This variable contains weather information. There are specific coding numbers:  
+              1. Clear, Few clouds, Partly cloudy, Partly cloudy;  
+              2. Mist + Cloudy, Mist + Broken clouds, Mist + Few clouds, Mist;  
+              3. Light Snow, Light Rain + Thunderstorm + Scattered clouds, Light Rain + Scattered clouds;  
+              4. Heavy Rain + Ice Pallets + Thunderstorm + Mist, Snow + Fog  
+**temp** - This variable shows the temperature in Celsius  
+**atemp** - This variable shows the "feels like" temperature in Celsius  
+**humidity** - This variable contains relative humidity  
+**windspeed** - This variable shows wind speed  
+**casual** - This variable contains number of non-registered user rentals initiated  
+**registered** - This variable contains number of registered user rentals initiated  
+**count** - This variable contains number of total rentals  
+
+The training dataset is comprised of the first 19 days of each month, while the testing dataset is the 20th to the end of the month. There are 10.9k observations in training dataset and 6494 observations in testing dataset.   
+
+## Let's Coding!
+
+### Required Packages
+
+```{r message=FALSE, warning=FALSE}
 library(data.table)
 library(parallelMap)
 library(ggplot2)
 library(lubridate)
 library(randomForest)
-set.seed(1)
+library(caret)
+library(doMC)
+library(plyr)
+library(dplyr)
+library(glmnet)
+library(Metrics)
+library(readr)
 ```
 
-#Read data
-```{r}
-train <- read.csv("/Users/nino/Documents/GitHub/bike_sharing_demand_CU/doc/train.csv")
-test <- read.csv("/Users/nino/Documents/GitHub/bike_sharing_demand_CU/doc/test.csv")
+### Read Data
+
+```{r message=FALSE, warning=FALSE}
+bike <- read.csv("train.csv")
 ```
 
-
-#Feature engineering
-
-There are many features we need to transfer the class in R so that we can use MLR model correctly.
-For example, we need to transfer our "hour" variable from numberic to factor variables. As 23:00 is closer to 00:00 than 18:00, if we keep use numberic format we will not capture the relationship correctly.
+### Piece of Data
 
 ```{r}
-featureEngineer = function(df) {
+colnames(bike)
+```
+The dataset contains 12 variables as listing above.  
+
+The following table shows part of training dataset. `holiday` and `workingday` are binary variables. `season` and `weather` are coded as the above description. `temp`, `atemp`, `humidity` and `windspeed` are numeric variables. Our outcome variable is `count`.  
+```{r}
+as.data.frame(bike[0:20, ])
+```
+
+### Feature engineering
+
+There are many features in dataset needed to be transfered into readable formats for MLR models.  
+For example, we need to split `datetime` variable into `month`, `day`, `year`, and `hour`. Then we need to transfer `hour` variable from numberic to factor variables. As 23:00 is closer to 00:00 than 18:00, if we keep use numberic format we will not capture the relationship correctly.  
+
+We created a function named `featureEngineer` to ensure the resue in later. 
+
+```{r message=FALSE, warning=FALSE}
+featureEngineer <- function(df) {
   names = c("season", "holiday", "workingday", "weather")
   df[,names] = lapply(df[,names], factor)
   df$datetime = strptime(as.character(df$datetime), format = "%Y-%m-%d %T", tz = "EST")
@@ -45,11 +99,30 @@ featureEngineer = function(df) {
   df$datetime = df$casual = df$registered = NULL
   return(df)
 }
-train_eng = featureEngineer(train)
-test_eng = featureEngineer(test)
-train_eng$count = log1p(train$count)
 
+# Do features engineering for bike dataset
+set.seed(123)
+bike_eng <- featureEngineer(bike)
+
+# Split training and testing data
+# Because test dataset from Kaggle competition doesn't contain output variable
+# We split training and testing dataset only by training data
+in_train <- createDataPartition(bike_eng$count, p = 3 / 4, list = FALSE)
+
+train_eng <- bike_eng[in_train, ]
+test_eng <- bike_eng[-in_train, ]
+```
+
+
+```{r message=FALSE, warning=FALSE}
 #extractfeatures
+
+# This is a function to extra needed features to make predictions. 
+# We extract "season", "holiday", "workingday", "weather", "temp",
+# "atemp", "humidity", "windspeed", and "hour". 
+
+train <-  bike[in_train, ]
+test <- bike[-in_train, ]
 extractFeatures <- function(df) {
   features <- c("season",
                 "holiday",
@@ -63,18 +136,68 @@ extractFeatures <- function(df) {
   df$hour <- hour(ymd_hms(df$datetime))
   return(df[, features])
 }
+
 trainFea <- extractFeatures(train)
-testFea  <- extractFeatures(test)
+testFea <- extractFeatures(test)
 ```
 
-#random forest
+### Data Visualization   
 
-```{r}
-#train our model
-rf <- randomForest(extractFeatures(train), train$count, ntree=100, importance=TRUE)
-#variable importance
+This part we will implement several simple visulization of `weather`, `season`, `hour` and `count` variables. Visualization plots help us to find some patterns behind training dataset.  
+```{r message=FALSE, warning=FALSE}
+# Select three main variables and do some data cleaning.
+train$season  <- factor(train$season, labels = c("Spring", "Summer", "Fall", "Winter"))
+train$weather <- factor(train$weather, labels = c("Good", "Normal", "Bad", "Very Bad"))
+train$hour    <- factor(hour(ymd_hms(train$datetime)))
+```
+  
+```{r message=FALSE, warning=FALSE}  
+# Calculate the mean of "count", group by "season" and "hour" 
+season_summary <- train %>% ddply(.(season,hour),
+                        summarise, count = mean(count))
+
+# Let's plot!
+train %>% ggplot(aes(hour, count, colour = season)) +
+  geom_point(data = season_summary, aes(group = season)) +
+  geom_line(data = season_summary, aes(group = season)) +
+  labs(x = "Hour", y = "Count", title = "Plot of Hour and Count, group by Season") + 
+  theme(plot.title=element_text(size=18)) 
+```  
+  
+This plot shows the relationship between `hour` and `count`, group by `season`. We can find, there are two peak hour to rent a bike: 8AM and 17PM, when people normally take commuter. Secondly, people prefer rent a bike in fall and summer than spring.  
+  
+```{r message=FALSE, warning=FALSE}  
+# Same as season, we calculate mean of count 
+# group by weather and hour variables.
+weather_summary <- train %>% ddply(.(weather,hour),
+                        summarise, count = mean(count))
+
+# Make a plot group by weather 
+train %>% ggplot(aes(hour, count, colour = weather)) +
+  geom_point(data = weather_summary, aes(group = weather)) +
+  geom_line(data = weather_summary, aes(group = weather)) +
+  labs(x = "Hour", y = "Count", title = "Plot of Hour and Count, group by Weather") + 
+  theme(plot.title=element_text(size=18)) 
+```  
+  
+This plot shows the relationship between `hour` and `count`, group by `weather`. According to the plot, the rental pattern of `hour` is same as the previous one: most of people might use sharing bikes in 8AM and 17PM. When considering weather, people rent more bikes when weather is good or normal than weather is bad. We don't have many records in very bad weather days, indicating people may not rent bikes in such extreme weather.  
+
+### Modeling   
+
+#### Random Forest  
+  
+```{r message=FALSE, warning=FALSE}  
+# Train random forest model by using trainFea dataset
+rf <- randomForest(trainFea, train$count, ntree=100, importance=TRUE)
+
+# Predict and summary random forest model
+yhat_rf <- predict(rf, newdata = testFea)
+defaultSummary(data.frame(obs = test$count, 
+                          pred = yhat_rf))
+
+# Variable importance
 imp <- importance(rf, type=1)
-#plot variable importance
+# Plot variable importance 
 featureImportance <- data.frame(Feature=row.names(imp), Importance=imp[,1])
 p <- ggplot(featureImportance, aes(x=reorder(Feature, Importance), y=Importance)) +
      geom_bar(stat="identity", fill="#53cfff") +
@@ -85,6 +208,44 @@ p <- ggplot(featureImportance, aes(x=reorder(Feature, Importance), y=Importance)
      ggtitle("Random Forest Feature Importance\n") +
      theme(plot.title=element_text(size=18))
 p
+```  
+  
+In random forest model, we find `hour` and `workingday` have higher importance, comparing with other variables. It is same with our previous plots that `hour` affects `count` a lot.  
+
+### Linear Regression  
+
+We also train a linear regression model to predict.  
+```{r message=FALSE, warning=FALSE}
+fit_lm <- lm(count ~ ., data = train_eng)
+yhat_lm <- predict(fit_lm, newdata = test_eng)
+defaultSummary(data.frame(obs = test_eng$count, 
+                          pred = yhat_lm))
+summary(fit_lm)
+```
+According to the coefficients, `hour` affects `count` significantly.  
+
+#### Lasso Regression  
+
+Except for linear regression, we also train a lasso regression to make predictions. Comparing to linear regression, $R^2$ of the training model is going down by using Elastic net.  
+```{r message=FALSE, warning=FALSE}
+enetGrid <- expand.grid(.lambda = seq(.05, 1, length = 10),
+                        .fraction = seq(.05, 1, length = 10))
+ctrl <- trainControl(method = "cv", number = 10)
+lasso <- train(count ~ ., data = train_eng, method = "enet", 
+               trControl = ctrl, tuneGrid = enetGrid)
+yhat_las <- predict(lasso, newdata = test_eng)
+defaultSummary(data.frame(obs = test_eng$count, 
+                          pred = yhat_las))
+
 ```
 
-#xgboost
+### Model Summary  
+
+![](result.png)
+According to the result table, random forest achieved the lowest RMSE and MAE scores (72.4 and 48.7) and highest $R^2$ score (0.835). It performs in a very good way. The evaluation of linear regressoin and lasso regression are at the same level while linear regression performs slightly well than lasso regression in RMSE, MAE and $R^2$ scores.  
+
+## Conclusion  
+
+In this project, we are concentrating on how to predict the demand of sharing bike in Washington D.C.. We did features engineering to transform specific variables into right formats and picked up some variables. Then, we drew data visualizations to plot the relationship between `hour`, `season`, `weather` and `count` variables. The plots shows that `hour` affects `count` in both `season` and `weather` groups.  
+In data modeling process, we implemented three models: random forest, linear regression and lasso regression. Random forest model achieved highest scores among three models. The results of three models show that some particular variables, such as `hour`, significantly affect the prediction of demand.  
+
