@@ -246,6 +246,17 @@ According to the result table, random forest achieved the lowest RMSE and MAE sc
 
 ## Conclusion  
 
-In this project, we are concentrating on how to predict the demand of sharing bike in Washington D.C.. We did features engineering to transform specific variables into right formats and picked up some variables. Then, we drew data visualizations to plot the relationship between `hour`, `season`, `weather` and `count` variables. The plots shows that `hour` affects `count` in both `season` and `weather` groups.  
-In data modeling process, we implemented three models: random forest, linear regression and lasso regression. Random forest model achieved highest scores among three models. The results of three models show that some particular variables, such as `hour`, significantly affect the prediction of demand.  
+Bike sharing systems have grown rapidly in United States and have provided an innovative transportation option. Washington D.C. is a very special city, where rail network and public transportation is most congested. Launching bike sharing systems here is able to provide a quciker, cheaper and more convenient transportation way for both residents and visitors.  
+
+In this project, we are concentrating on how to predict the demand of sharing bike in Washington D.C.. We did features engineering to transform specific variables into right formats and picked up some variables. Then, we drew data visualizations to plot the relationship between `hour`, `season`, `weather` and `count` variables. The plots shows that `hour` affects `count` in both `season` and `weather` groups. It is consistent with what we found in models.  
+
+In data modeling process, we implemented three models: random forest, linear regression and lasso regression. Random forest model achieved highest scores among three models. The results of three models show that some particular variables, such as `hour`, significantly affects the prediction of demand.   
+
+It is not surprising that daily hours affect demand of bikes. People prefer a cheaper and quciker way to avoid traffic congestion in rush hour, and sharing bikes meet their requirments. Back to the bike imbalancing issues, increasing bike supply in rush hour periods and adjusting seasonally might be a proper way to solve the problem.  
+
+
+
+
+
+
 
